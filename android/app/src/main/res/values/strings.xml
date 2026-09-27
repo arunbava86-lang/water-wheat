@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Wheat Water</string>
+    <string name="title_activity_main">Wheat Water</string>
+    <string name="package_name">in.ktu.mtech.wheatwater</string>
+    <string name="custom_url_scheme">in.ktu.mtech.wheatwater</string>
+</resources>

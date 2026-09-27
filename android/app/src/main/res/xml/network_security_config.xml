@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The gateway is on the farm's own Wi-Fi and serves plain HTTP on the LAN.
+     Access is authorised by the pairing code, and the gateway accepts no
+     pump command from the app (only the farmer's approval of an advisory). -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>

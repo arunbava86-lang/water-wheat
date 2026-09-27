@@ -1,0 +1,12 @@
+{
+	"appId": "in.ktu.mtech.wheatwater",
+	"appName": "Wheat Water",
+	"webDir": "www",
+	"server": {
+		"androidScheme": "http",
+		"cleartext": true
+	},
+	"android": {
+		"allowMixedContent": true
+	}
+}

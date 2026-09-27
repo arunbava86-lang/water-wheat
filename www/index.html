@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1f5f3f">
+<meta name="description" content="Irrigation advice for your wheat field. Nothing runs until you approve.">
+<title>Wheat Water</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand">
+    <img src="icons/icon-192.png" alt="" width="28" height="28">
+    <div>
+      <div class="title">Wheat Water</div>
+      <div class="sub" id="farmLine">Not connected</div>
+    </div>
+  </div>
+  <button class="link" id="linkDot" aria-label="Connection status" title="Connection"><span class="dot"></span><span id="linkText">offline</span></button>
+</header>
+
+<main id="view" tabindex="-1" aria-live="polite"></main>
+
+<nav class="tabs" aria-label="Sections">
+  <button data-tab="home" class="on"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg>Home</button>
+  <button data-tab="advice"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2c3 4 6 7.5 6 11a6 6 0 0 1-12 0c0-3.5 3-7 6-11z"/></svg>Advice<span class="badge" id="adviceBadge" hidden>1</span></button>
+  <button data-tab="history"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v7l4 2M12 21a9 9 0 1 1 0-18 9 9 0 0 1 0 18z" fill="none" stroke-width="2"/></svg>History</button>
+  <button data-tab="sensors"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 3h2v11.3a3.5 3.5 0 1 1-2 0z"/></svg>Sensors</button>
+  <button data-tab="settings"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8a4 4 0 1 1 0 8 4 4 0 0 1 0-8zm8.9 5.3l-1.8-.3a7 7 0 0 1-.8 1.9l1.1 1.5-1.4 1.4-1.5-1.1a7 7 0 0 1-1.9.8l-.3 1.8h-2l-.3-1.8a7 7 0 0 1-1.9-.8l-1.5 1.1-1.4-1.4 1.1-1.5a7 7 0 0 1-.8-1.9l-1.8-.3v-2l1.8-.3a7 7 0 0 1 .8-1.9L5.2 6.9l1.4-1.4 1.5 1.1a7 7 0 0 1 1.9-.8L10.3 4h2l.3 1.8a7 7 0 0 1 1.9.8l1.5-1.1 1.4 1.4-1.1 1.5a7 7 0 0 1 .8 1.9l1.8.3z"/></svg>Settings</button>
+</nav>
+
+<dialog id="dlg"><form method="dialog" id="dlgForm"></form></dialog>
+<div id="toast" role="status" hidden></div>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>
