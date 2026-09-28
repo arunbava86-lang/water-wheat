@@ -1,4 +1,5 @@
 import { GatewayClient, DemoClient, RelayClient, remoteSupported, pairWithGateway } from "./api.js";
+import { pushSupported, enablePush, disablePush, resumePush } from "./notify.js";
 
 // ------------------------------------------------------------------ state
 const CFG_KEY = "wheat-water-config";
@@ -52,7 +53,7 @@ function dialog(html, onSubmit) {
 // ------------------------------------------------------------------ helpers
 const ACTION = {
   irrigate: { title: (c) => `Irrigate ${num(c.quantity_mm)} mm`, pill: "blue", word: "Irrigate" },
-  wait: { title: () => "No irrigation needed", pill: "green", word: "Wait" },
+  wait: { title: (c) => c && c.clause === "rain-deferral" ? "Wait: rain is forecast" : "No irrigation needed", pill: "green", word: "Wait" },
   insufficient_data: { title: () => "Not enough information to advise", pill: "amber", word: "No advice" },
   scout: { title: () => "Check the field", pill: "amber", word: "Scout" },
   fertigate: { title: () => "Fertigation advised", pill: "amber", word: "Fertigate" },
@@ -186,6 +187,8 @@ async function viewAdvice(s) {
         <div><div class="k">Why today</div><div class="v small">${c.clause === "pre-empt" ? "Water is available now and needed before the next turn" : "The field reaches the trigger"}</div></div>
       </div>` : ""}
       <p class="why">${esc(c.rationale)}</p>
+      ${rainLine(c)}
+      ${(c.why || []).length ? `<div class="actions"><button class="btn block" data-why="${esc(c.advisory_id)}">Why? Ask about this advice</button></div>` : ""}
       ${plan.stress_avoided_mm_days ? `<p class="small muted">Waiting for the next water turn would cost about ${num(plan.stress_avoided_mm_days)} mm-days of crop stress.</p>` : ""}
       ${src ? `<p class="tiny muted">Sources: ${src}</p>` : ""}
       ${c.action === "irrigate" ? `
@@ -195,6 +198,69 @@ async function viewAdvice(s) {
       : `<div class="actions"><button class="btn block" data-act="acknowledge" data-id="${esc(c.advisory_id)}">OK, understood</button></div>`}
     </div>`;
   }).join("") + qhtml;
+}
+
+function rainLine(c) {
+  const st = c.state || {};
+  if (st.rain_mm == null) return st.rain_error ? `<p class="tiny muted">No rain forecast today.</p>` : "";
+  const sim = st.rain_source === "simulated";
+  return `<p class="small muted">Rain in the next 24 h: ${num(st.rain_mm, 1)} mm${st.rain_prob != null ? `, ${num(st.rain_prob * 100)}% chance` : ""}${sim ? " (simulated for this demo)" : ""}.</p>`;
+}
+
+// ------------------------------------------------------------------ "why?" chat
+// The answers are built on the gateway from the advisory's own facts (why.py)
+// and arrive with the card, so this works on the farm Wi-Fi, through the
+// relay and in demo mode alike. Typed questions are matched to one of them by
+// keywords; nothing here can change the advice.
+// Each entry is [word stem, weight]. Stems match at the start of a word, so "rain"
+// matches "rains" and "raining" but "who" does not match inside "whole". Topic words
+// (rain, amount, source) outweigh question words (what if, why), so "what if it rains"
+// is a rain question. Anything with no topic word gets the list of questions.
+const WHY_WORDS = {
+  rain: [["rain", 3], ["shower", 3], ["weather", 2], ["cloud", 2], ["barish", 3], ["storm", 3]],
+  amount: [["amount", 3], ["how much", 3], ["mm", 2], ["minute", 2], ["how long", 2], ["pump time", 3], ["cost", 3], ["rupee", 3], ["rs", 2], ["price", 3], ["bill", 2]],
+  wait: [["wait", 3], ["delay", 3], ["later", 2], ["skip", 3], ["don't irrigate", 3], ["dont irrigate", 3], ["not irrigate", 3], ["what if", 1]],
+  sure: [["sure", 3], ["confiden", 3], ["accura", 3], ["trust", 3], ["wrong", 2], ["reliab", 3], ["certain", 3], ["correct", 2], ["tested", 3]],
+  sources: [["source", 3], ["reference", 3], ["fao", 3], ["icar", 3], ["pau", 3], ["document", 3], ["based on", 2], ["cite", 3], ["book", 2], ["where does", 2]],
+  decide: [["approve", 3], ["decline", 3], ["reject", 3], ["who decides", 3], ["who controls", 3], ["control", 2], ["automatic", 3], ["by itself", 3], ["start the pump", 3]],
+  why_now: [["why", 1], ["reason", 2], ["today", 1], ["due", 2], ["trigger", 3], ["need water", 3]],
+};
+const esc_re = (w) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+function matchWhy(text, items) {
+  const t = text.toLowerCase();
+  let best = null, score = 0;
+  for (const it of items) {
+    const n = (WHY_WORDS[it.id] || []).reduce((acc, [w, k]) => acc + (new RegExp("(^|[^a-z])" + esc_re(w)).test(t) ? k : 0), 0);
+    if (n > score) { best = it; score = n; }
+  }
+  return score >= 2 ? best : null;
+}
+function whyChat(id) {
+  const c = (last.pending || []).find(x => x.advisory_id === id); if (!c) return;
+  const items = c.why || [];
+  const d = $("#dlg"), f = $("#dlgForm");
+  f.innerHTML = `<div class="row between whyhead"><h3>Ask about this advice</h3><button class="btn" value="cancel" id="whyClose">Close</button></div>
+    <div id="chat" class="chat"><div class="msg a">${esc(ACTION[c.action]?.title(c) || c.action)}. Tap a question or type your own.</div></div>
+    <div class="chips">${items.map(it => `<button type="button" class="chip" data-q="${esc(it.id)}">${esc(it.q)}</button>`).join("")}</div>
+    <div class="row" style="gap:8px;margin-top:8px"><input id="whyText" type="text" placeholder="Type a question" autocomplete="off" style="flex:1"><button type="button" class="btn primary" id="whySend">Ask</button></div>
+    <p class="tiny muted">Answers come from this advice's own numbers. Asking does not change the advice.</p>`;
+  const chat = $("#chat", f);
+  const say = (q, a) => {
+    chat.insertAdjacentHTML("beforeend", `<div class="msg q">${esc(q)}</div><div class="msg a">${esc(a)}</div>`);
+    chat.scrollTop = chat.scrollHeight;
+  };
+  f.querySelectorAll("[data-q]").forEach(b => b.onclick = () => { const it = items.find(x => x.id === b.dataset.q); say(it.q, it.a); });
+  const ask = () => {
+    const inp = $("#whyText", f), text = inp.value.trim(); if (!text) return;
+    const it = matchWhy(text, items);
+    say(text, it ? `(${it.q}) ${it.a}` : "I can only answer questions about this advice. Try one of the questions below.");
+    inp.value = "";
+  };
+  $("#whySend", f).onclick = ask;
+  $("#whyText", f).onkeydown = (ev) => { if (ev.key === "Enter") { ev.preventDefault(); ask(); } };
+  f.onsubmit = () => {};
+  d.onclose = null;
+  d.showModal();
 }
 
 function inputFor(inp) {
@@ -262,6 +328,8 @@ function viewSettings(s) {
     <div class="actions two"><button class="btn" id="chgConn">Change gateway</button><button class="btn" id="toggleDemo">${cfg.mode === "demo" ? "Leave demo" : "Demo mode"}</button></div></div>
   <h2>Remote access</h2>
   <div class="card">${viewRemote(s)}</div>
+  <h2>Notifications</h2>
+  <div class="card">${viewPush(s)}</div>
   <h2>Automatic safety watering</h2>
   <div class="card"><p class="small">If the gateway loses contact with the advisory service and the soil becomes very dry (${Math.round((fs.trigger_fraction_taw || 0.8) * 100)}% of the water it can hold is used), it can give ${num(fs.dose_mm || 25)} mm by itself, at most ${fs.max_events || 3} times and at least ${fs.min_interval_days || 3} days apart. This is the only way the pump can run without your approval of that day's advice, and it is off unless you switch it on.</p>
     <div class="row between"><strong>${fs.armed ? "On" : "Off"}</strong><button class="btn ${fs.armed ? "danger" : ""}" id="fsBtn">${fs.armed ? "Switch off" : "Switch on"}</button></div></div>
@@ -269,6 +337,24 @@ function viewSettings(s) {
   <div class="card small"><p><strong>Wheat Water</strong> 1.0 · M.Tech project (KTU).</p>
     <p class="muted">The advice comes from an FAO 56 water balance and a forecast. The app can approve, change or decline advice, answer questions and switch safety watering. It has no control that starts the pump directly.</p></div>`;
 }
+
+function viewPush(s) {
+  const on = !!(cfg.push && cfg.push.on);
+  if (!pushSupported()) return `<p class="small muted">Notifications work in the installed Android app only.</p>`;
+  if (!client || client.kind === "demo") return `<p class="small muted">Not available in demo mode.</p>`;
+  const gw = s && s.push;
+  const keyNote = gw && String(gw.mode || "").startsWith("log only")
+    ? `<p class="small" style="color:var(--red)">The gateway has no Firebase key yet, so it records notices but cannot send them.</p>` : "";
+  return `<p class="small">The phone tells you when there is new irrigation advice, a question, no advice for the day, or when safety watering has run. A notification only asks you to look. Approving still happens here, on the advice card.</p>${keyNote}
+    <div class="row between"><strong>${on ? "On" : "Off"}</strong><button class="btn" id="pushBtn">${on ? "Switch off" : "Switch on"}</button></div>`;
+}
+
+const pushHooks = {
+  client: () => client, cfg, saveCfg: () => saveCfg(),
+  onOpen: (data) => { go(data && data.kind === "question" ? "advice" : (data && data.advisory_id ? "advice" : "home")); },
+  onForeground: (n) => { toast(n.title || "New notice from the gateway"); render(); },
+  onError: (msg) => toast(msg, 6000),
+};
 
 function viewRemote(s) {
   const configured = s && s.remote && s.remote.configured;
@@ -344,6 +430,7 @@ function bind() {
   const db = $("#demoBtn"); if (db) db.onclick = () => { cfg.mode = "demo"; saveCfg(); client = new DemoClient(); view.innerHTML = ""; render(); };
   view.querySelectorAll("[data-go]").forEach(b => b.onclick = () => go(b.dataset.go));
   view.querySelectorAll("[data-act]").forEach(b => b.onclick = () => decide(b.dataset.act, b.dataset.id));
+  view.querySelectorAll("[data-why]").forEach(b => b.onclick = () => whyChat(b.dataset.why));
   view.querySelectorAll(".qForm").forEach(f => {
     f.onsubmit = async (ev) => {
       ev.preventDefault();
@@ -362,6 +449,14 @@ function bind() {
   const cc = $("#chgConn"); if (cc) cc.onclick = () => { cfg.mode = "gateway"; saveCfg(); client = null; view.innerHTML = viewConnect(); bind(); probeSameOrigin(); };
   const td = $("#toggleDemo"); if (td) td.onclick = () => { cfg.mode = cfg.mode === "demo" ? "gateway" : "demo"; saveCfg(); client = makeClient(); go("home"); };
   const fb = $("#fsBtn"); if (fb) fb.onclick = () => failsafe();
+  const pn = $("#pushBtn"); if (pn) pn.onclick = async () => {
+    pn.disabled = true;
+    try {
+      if (cfg.push && cfg.push.on) { await disablePush(pushHooks); toast("Notifications are off."); }
+      else { await enablePush(pushHooks); toast("Notifications are on."); }
+    } catch (e) { toast(e.message, 6000); }
+    render();
+  };
   const pb = $("#pairBtn"); if (pb) pb.onclick = async () => {
     pb.disabled = true;
     try { cfg.remote = await pairWithGateway(client, "Farmer phone"); saveCfg(); toast("Paired. You can now decide from anywhere."); }
@@ -427,6 +522,7 @@ document.querySelectorAll(".tabs button").forEach(b => b.onclick = () => go(b.da
 
 client = makeClient();
 render();
+resumePush(pushHooks);
 setInterval(() => { if (client && document.visibilityState === "visible" && !$("#dlg").open && (tab === "home")) render(); }, 60000);
 
 if ("serviceWorker" in navigator && window.isSecureContext && !window.Capacitor) {

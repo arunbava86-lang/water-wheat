@@ -64,6 +64,9 @@ export class GatewayClient {
   setFailsafe(armed, confirm) { return this.post("/api/failsafe", { armed, confirm }); }
   advance() { return this.post("/api/sim/advance?days=1", {}); }
   sendReading() { return this.post("/api/sim/reading", {}); }
+  // Notification token: tells the gateway where to send "please look" notices. Nothing else.
+  pushToken(token, key_id, device_name) { return this.post("/api/push/register", { token, key_id: key_id || null, device_name: device_name || "Farmer phone" }); }
+  pushOff(token) { return this.post("/api/push/unregister", { token }); }
 }
 
 // --------------------------------------------------------------------------
@@ -139,6 +142,8 @@ export class DemoClient {
   }
   async advance() { await this._load(); if (this.s.i < this.data.days.length - 1) this.s.i += 1; saveLocal(this.s); return { day: this._day().day }; }
   async sendReading() { return {}; }
+  async pushToken() { return { demo: true }; }
+  async pushOff() { return { demo: true }; }
   async nextAdvice() {
     await this._load();
     while (this.s.i < this.data.days.length - 1) {
@@ -235,4 +240,7 @@ export class RelayClient {
   setFailsafe(armed, confirm) { const b = { armed }; if (confirm) b.confirm = confirm; return this._send("failsafe", b); }
   advance() { throw new Error("Only available on the farm Wi-Fi."); }
   sendReading() { throw new Error("Only available on the farm Wi-Fi."); }
+  // A new token while away from the farm: sent signed, like a decision, so the relay cannot plant its own.
+  pushToken(token, _key_id, device_name) { return this._send("push_token", { token, device_name: device_name || "Farmer phone" }); }
+  pushOff() { throw new Error("Switch notifications off on the farm Wi-Fi."); }
 }
