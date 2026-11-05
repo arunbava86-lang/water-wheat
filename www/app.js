@@ -385,9 +385,45 @@ function viewRemote(s) {
     <div class="actions"><button class="btn primary block" id="pairBtn">Pair this phone for remote access</button></div>`;
 }
 
+
+// ------------------------------------------------------------------ Results (simulation, 5 Nov 2026)
+// What could only be tested in simulation (a season, or years of records), shown to the farmer and the
+// examiner on the phone. Read from results/summary.json, which make_simulation_demo.py writes from the
+// project's result files; nothing here is typed in by hand. Works in demo mode and with no gateway.
+let simCache = null;
+async function viewResults() {
+  if (!simCache) {
+    try { const r = await fetch("results/summary.json", { cache: "no-store" }); if (!r.ok) throw new Error(r.status); simCache = await r.json(); }
+    catch (e) { return `<div class="card"><h3>No results on this phone yet</h3><p class="small">Run "DEMO simulation (no hardware).bat" on the laptop, then rebuild the app or open it from the gateway.</p></div>`; }
+  }
+  const d = simCache;
+  const tbl = (t) => `<div class="tscroll"><table class="rt"><tr>${t.head.map(h => `<th>${esc(h)}</th>`).join("")}</tr>${t.rows.map(r => `<tr>${r.map(c => `<td>${esc(c)}</td>`).join("")}</tr>`).join("")}</table></div>`;
+  const s = d.season;
+  let h = `<div class="card hero"><h3>How this system was tested</h3>
+    <p class="small">Things that take a whole season or years of records were tested in simulation and on real public data. Things that take minutes (probes, radio, relay, pump) are tested on the bench.</p>
+    <p class="note"><strong>You stay in control.</strong> In every test the computer only advised. The pump ran only after the farmer approved; with no advice, nothing ran.</p></div>`;
+  if (s) h += `<h2>One simulated season (2 fields, 127 days)</h2><div class="card"><div class="grid2">
+      <div class="kv"><div class="k">Advised to water</div><div class="v">${s.advised} times</div></div>
+      <div class="kv"><div class="k">Farmer said yes</div><div class="v">${s.approved}</div></div>
+      <div class="kv"><div class="k">Farmer gave less</div><div class="v">${s.changed}</div></div>
+      <div class="kv"><div class="k">Farmer said no</div><div class="v">${s.rejected}</div></div>
+      <div class="kv"><div class="k">Water given</div><div class="v">${s.applied_mm} of ${s.approved_mm} mm</div></div>
+      <div class="kv"><div class="k">Stopped early (soil full)</div><div class="v">${s.stopped_early} of ${s.runs} runs</div></div></div></div>`;
+  if (d.ask && d.ask.length) h += `<h2>What the advisor says in different situations</h2>` + d.ask.map(a =>
+      `<div class="card"><div class="row" style="justify-content:space-between;gap:8px"><strong class="small">${esc(a[0])}</strong><span class="pill ${a[1] === "no water" ? "grey" : a[1] === "reminder" ? "amber" : "blue"}">${esc(a[1])}</span></div><p class="tiny muted" style="margin:6px 0 0">${esc(a[2])}</p></div>`).join("");
+  h += `<h2>Results</h2>` + d.sections.map(x => `<details class="card rsec"><summary><span class="rn">${x.num}</span><span>${esc(x.title)}</span><span class="pill grey tiny">${esc(x.label)}</span></summary>
+      <p class="small"><strong>Question.</strong> ${esc(x.question)}</p><p class="small muted"><strong>How.</strong> ${esc(x.how)}</p>
+      ${x.tables.map(tbl).join("")}${x.figs.map(f => `<img class="rimg" src="results/${esc(f)}" alt="" loading="lazy">`).join("")}
+      <p class="note"><strong>What it means.</strong> ${esc(x.meaning)}</p><p class="tiny muted"><strong>Limit.</strong> ${esc(x.limit)}</p></details>`).join("");
+  if (d.checks && d.checks.length) h += `<h2>Checks run on the laptop (${esc(d.made)})</h2><div class="card">${tbl({ head: ["What", "Checks", "Result", "Time"], rows: d.checks })}</div>`;
+  h += `<p class="tiny muted" style="margin:12px 4px">Results made ${esc(d.made)}. Simulation and public records only; no field trial.</p>`;
+  return h;
+}
+
 // ------------------------------------------------------------------ render
 async function render() {
   document.querySelectorAll(".tabs button").forEach(b => b.classList.toggle("on", b.dataset.tab === tab));
+  if (tab === "results") { view.innerHTML = await viewResults(); bind(); return; }
   if (!client) { view.innerHTML = viewConnect(); bind(); probeSameOrigin(); setLink("", "offline"); $("#farmLine").textContent = "Not connected"; return; }
   if (!view.innerHTML) view.innerHTML = `<div class="row" style="justify-content:center;padding:40px"><div class="spinner"></div></div>`;
   try {
