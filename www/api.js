@@ -65,6 +65,7 @@ export class GatewayClient {
   advance() { return this.post("/api/sim/advance?days=1", {}); }
   sendReading() { return this.post("/api/sim/reading", {}); }
   // Notification token: tells the gateway where to send "please look" notices. Nothing else.
+  ask(question, advisory_id) { return this.post("/api/ask", { question, advisory_id: advisory_id || null }); }
   pushToken(token, key_id, device_name) { return this.post("/api/push/register", { token, key_id: key_id || null, device_name: device_name || "Farmer phone" }); }
   pushOff(token) { return this.post("/api/push/unregister", { token }); }
 }
@@ -137,11 +138,12 @@ export class DemoClient {
   }
   async answer(fields) { this.s.answers = { ...this.s.answers, ...fields }; this.s.answeredAll = true; this._event("question_answered", JSON.stringify(fields)); saveLocal(this.s); return { accepted: fields, rejected: [] }; }
   async setFailsafe(armed, confirm) {
-    if (armed && confirm !== "ARM") { const e = new Error("Type ARM to confirm"); e.status = 422; throw e; }
+    if (armed) { const e = new Error("Safety watering has been removed: with no advice the pump never runs."); e.status = 409; throw e; }
     this.s.failsafe = armed; this._event(armed ? "failsafe_armed" : "failsafe_disarmed", "demo"); saveLocal(this.s); return { armed };
   }
   async advance() { await this._load(); if (this.s.i < this.data.days.length - 1) this.s.i += 1; saveLocal(this.s); return { day: this._day().day }; }
   async sendReading() { return {}; }
+  async ask() { throw new Error("The AI assistant is not available in demo mode"); }
   async pushToken() { return { demo: true }; }
   async pushOff() { return { demo: true }; }
   async nextAdvice() {
@@ -243,4 +245,5 @@ export class RelayClient {
   // A new token while away from the farm: sent signed, like a decision, so the relay cannot plant its own.
   pushToken(token, _key_id, device_name) { return this._send("push_token", { token, device_name: device_name || "Farmer phone" }); }
   pushOff() { throw new Error("Switch notifications off on the farm Wi-Fi."); }
+  async ask() { throw new Error("The AI assistant works on the farm Wi-Fi for now"); }
 }

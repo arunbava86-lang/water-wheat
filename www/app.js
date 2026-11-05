@@ -243,18 +243,32 @@ function whyChat(id) {
     <div id="chat" class="chat"><div class="msg a">${esc(ACTION[c.action]?.title(c) || c.action)}. Tap a question or type your own.</div></div>
     <div class="chips">${items.map(it => `<button type="button" class="chip" data-q="${esc(it.id)}">${esc(it.q)}</button>`).join("")}</div>
     <div class="row" style="gap:8px;margin-top:8px"><input id="whyText" type="text" placeholder="Type a question" autocomplete="off" style="flex:1"><button type="button" class="btn primary" id="whySend">Ask</button></div>
-    <p class="tiny muted">Answers come from this advice's own numbers. Asking does not change the advice.</p>`;
+    <p class="tiny muted">Answers come from this advice's own numbers. Other questions go to the AI assistant, which can look things up but cannot change the advice.</p>`;
   const chat = $("#chat", f);
   const say = (q, a) => {
     chat.insertAdjacentHTML("beforeend", `<div class="msg q">${esc(q)}</div><div class="msg a">${esc(a)}</div>`);
     chat.scrollTop = chat.scrollHeight;
   };
   f.querySelectorAll("[data-q]").forEach(b => b.onclick = () => { const it = items.find(x => x.id === b.dataset.q); say(it.q, it.a); });
-  const ask = () => {
+  const ask = async () => {
     const inp = $("#whyText", f), text = inp.value.trim(); if (!text) return;
-    const it = matchWhy(text, items);
-    say(text, it ? `(${it.q}) ${it.a}` : "I can only answer questions about this advice. Try one of the questions below.");
     inp.value = "";
+    const it = matchWhy(text, items);
+    if (it) { say(text, `(${it.q}) ${it.a}`); return; }
+    // Phase 2: a question the fixed answers do not cover goes to the assistant,
+    // which looks things up with read-only tools. It cannot change the advice.
+    if (!client || !client.ask) { say(text, "I can only answer questions about this advice. Try one of the questions below."); return; }
+    say(text, "Looking this up…");
+    const bubble = chat.lastElementChild;
+    try {
+      const r = await client.ask(text, id);
+      const src = (r.citations || []).map(x => `${x.document}, p. ${x.page}`).join("; ");
+      bubble.textContent = r.answer + (r.delivered_by === "model" ? " (AI assistant; every number checked against the system's own tools"
+        + (src ? `; sources: ${src}` : "") + ")" : "");
+    } catch (e) {
+      bubble.textContent = (e && e.message ? e.message + ". " : "") + "Try one of the questions below.";
+    }
+    chat.scrollTop = chat.scrollHeight;
   };
   $("#whySend", f).onclick = ask;
   $("#whyText", f).onkeydown = (ev) => { if (ev.key === "Enter") { ev.preventDefault(); ask(); } };
@@ -330,9 +344,8 @@ function viewSettings(s) {
   <div class="card">${viewRemote(s)}</div>
   <h2>Notifications</h2>
   <div class="card">${viewPush(s)}</div>
-  <h2>Automatic safety watering</h2>
-  <div class="card"><p class="small">If the gateway loses contact with the advisory service and the soil becomes very dry (${Math.round((fs.trigger_fraction_taw || 0.8) * 100)}% of the water it can hold is used), it can give ${num(fs.dose_mm || 25)} mm by itself, at most ${fs.max_events || 3} times and at least ${fs.min_interval_days || 3} days apart. This is the only way the pump can run without your approval of that day's advice, and it is off unless you switch it on.</p>
-    <div class="row between"><strong>${fs.armed ? "On" : "Off"}</strong><button class="btn ${fs.armed ? "danger" : ""}" id="fsBtn">${fs.armed ? "Switch off" : "Switch on"}</button></div></div>
+  <h2>If the connection is lost</h2>
+  <div class="card"><p class="small">If the gateway cannot reach the advisory service, or the soil probes are not working, <strong>nothing runs</strong>. You get a message: check the field yourself and irrigate by hand if it is dry. The pump only ever runs after you approve that day's advice.</p></div>
   <h2>About</h2>
   <div class="card small"><p><strong>Wheat Water</strong> 1.0 · M.Tech project (KTU).</p>
     <p class="muted">The advice comes from an FAO 56 water balance and a forecast. The app can approve, change or decline advice, answer questions and switch safety watering. It has no control that starts the pump directly.</p></div>`;
@@ -448,7 +461,7 @@ function bind() {
   const rt = $("#retry"); if (rt) rt.onclick = () => render();
   const cc = $("#chgConn"); if (cc) cc.onclick = () => { cfg.mode = "gateway"; saveCfg(); client = null; view.innerHTML = viewConnect(); bind(); probeSameOrigin(); };
   const td = $("#toggleDemo"); if (td) td.onclick = () => { cfg.mode = cfg.mode === "demo" ? "gateway" : "demo"; saveCfg(); client = makeClient(); go("home"); };
-  const fb = $("#fsBtn"); if (fb) fb.onclick = () => failsafe();
+  // (5 Nov 2026) the safety-watering switch was removed: the system fails closed
   const pn = $("#pushBtn"); if (pn) pn.onclick = async () => {
     pn.disabled = true;
     try {
@@ -503,18 +516,6 @@ async function decide(act, id) {
     else if (act !== "acknowledge") toast(res.why ? `Recorded. The pump did not run: ${res.why}` : "Recorded.");
     render();
   }
-}
-
-async function failsafe() {
-  const armed = last?.failsafe?.armed;
-  if (armed) { try { await client.setFailsafe(false); toast("Safety watering is off."); } catch (e) { toast(e.message); } return render(); }
-  const r = await dialog(`<h3>Switch on safety watering?</h3>
-    <p class="small">When contact is lost and the soil is very dry, the gateway may irrigate <strong>without asking you that day</strong>, at most ${last?.failsafe?.max_events ?? 3} times.</p>
-    <label for="c">Type ARM to confirm</label><input id="c" name="c" type="text" autocomplete="off" autocapitalize="characters">
-    <p class="err small" style="color:var(--red)"></p>
-    <div class="actions two"><button class="btn" value="cancel">Cancel</button><button class="btn primary" value="ok">Switch on</button></div>`,
-    (fd) => client.setFailsafe(true, String(fd.get("c") || "").trim().toUpperCase()));
-  if (r) toast("Safety watering is on."); render();
 }
 
 function go(t) { tab = t; view.innerHTML = ""; render(); window.scrollTo(0, 0); }
