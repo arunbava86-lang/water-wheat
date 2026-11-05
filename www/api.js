@@ -99,6 +99,10 @@ export class DemoClient {
     d.questions = this.s.answeredAll ? [] : (d.questions || []);
     d.failsafe = { ...(d.failsafe || {}), armed: this.s.failsafe };
     d.farm = this.data.farm; d.sim = true; d.demo = true;
+    // A recorded day is shown as today: its advice and readings were "issued just now" on the demo day.
+    const now = new Date().toISOString();
+    for (const c of d.pending) c.issued = now;
+    for (const n of (d.nodes || [])) n.ts = now;
     return d;
   }
   async questions() { await this._load(); const d = this._day(); return { questions: this.s.answeredAll ? [] : (d.questions_ui || []), reasons: this.data.reasons }; }
@@ -120,7 +124,7 @@ export class DemoClient {
   }
   async events() { return this.s.events; }
   async history() { await this._load(); return this.data.days.slice(0, this.s.i + 1).map(d => d.state).filter(Boolean); }
-  async readings() { await this._load(); return this._day().nodes || []; }
+  async readings() { await this._load(); const now = new Date().toISOString(); return (this._day().nodes || []).map(n => ({ ...n, ts: now })); }
   async profile() { return { ...this.s.answers }; }
   async dispose(id, disposition, modified_mm, reason_code) {
     await this._load();

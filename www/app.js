@@ -174,7 +174,9 @@ async function viewAdvice(s) {
   return cards.map(c => {
     const a = ACTION[c.action] || { title: () => c.action, pill: "grey" };
     const plan = c.plan || {};
-    const src = (c.sources || []).map(x => `${esc(x.document || "source")} p.${esc(x.page)}`).join("; ");
+    // the gateway's own planning record is kept for audit, not shown as a source to the farmer
+    const src = (c.sources || []).filter(x => !String(x.document || "").startsWith("APC planning record"))
+      .map(x => /p\. ?\d+/.test(x.document || "") ? esc(x.document) : `${esc(x.document || "source")} p.${esc(x.page)}`).join("; ");
     return `
     <div class="card hero ${c.action === "irrigate" ? "irrigate" : ""}">
       <div class="row between"><span class="pill ${a.pill}">${esc(a.word || c.action)}</span><span class="tiny muted">issued ${esc(ago(c.issued))}</span></div>
